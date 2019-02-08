@@ -5,8 +5,7 @@
 
 
 """
-Main file to run auth_server either standalone
-or using gunicorn by returning app object
+Main file to run Bosch Dome RCP+ PTZ API
 """
 
 
@@ -28,7 +27,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(__file__, os.pardir))
 def set_process_name(config_obj=None):
     """ Set process name according to pom.xml file """
 
-    artifact_id = "rcp-ptz-api"
+    artifact_id = "bosch-dome-rcpplus-ptz-api"
     version = "1.0"
 
     # Strip passwords from arguments
@@ -60,7 +59,7 @@ def get_arguments_from_cmd_line():
     os.environ["COLUMNS"] = str(shutil.get_terminal_size().columns)
 
     parser = argparse.ArgumentParser(
-        description="API to download Sentinel/Landsat satellite product files", formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        description="Bosch Dome RCP+ PTZ API", formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
     parser.add_argument("-b", "--bind-address", type=str, default="::1", help="Address to bind on", metavar="0.0.0.0")
