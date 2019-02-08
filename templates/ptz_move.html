@@ -1,0 +1,293 @@
+<!doctype html>
+
+<html lang="en">
+
+<head>
+	<meta charset="utf-8" />
+
+	<style>
+		* {
+			border: 0;
+			box-sizing: border-box;
+			margin: 0;
+			padding: 0;
+		}
+
+		#joystick-main {
+			display: flex;
+			align-items: center;
+			height: 100vh;
+			justify-content: center;
+			margin: auto;
+			width: 100vw;
+		}
+
+		#joystick-base {
+			padding-top: 16px;
+			bottom: 32px;
+			left: 32px;
+			height: 116px;
+			width: 116px;
+			border-radius: 100%;
+			border: 10px solid rgba(0, 136, 204, 0.1);
+			background: rgba(0, 136, 204, 0.05);
+			box-shadow: 0 0 15px rgba(0, 0, 0, 0.5) inset, 0 0 5px rgba(0, 0, 0, 0.2);
+			transition: border-color 0.3s;
+			cursor: pointer;
+			touch-action: none;
+		}
+
+		.joystick-stick {
+			margin: auto;
+			height: 64px;
+			width: 64px;
+			border-radius: 100%;
+			background: rgba(0, 136, 204, 0.25);
+			box-shadow: 0 0 5px rgba(0, 0, 0, 0.7) inset;
+			transition: background 0.3s;
+			will-change: transform;
+			touch-action: none;
+		}
+
+		#camera-base {
+			margin-top: 10px;
+			text-align: center;
+		}
+
+		.zoombuttons {
+			position: absolute;
+			width: 50px;
+			top: calc(50vh - 60px);
+			right: calc(50vw - 150px);
+		}
+
+		.btn {
+			width: 40px;
+			height: 40px;
+			background: gray;
+			border-radius: 3px;
+			margin: 3px;
+		}
+	</style>
+
+</head>
+
+<body>
+
+	<div>
+
+		<div id="joystick-main">
+			<div>
+				<div id="joystick-base"></div>
+				<div id="camera-base">
+					<select id="camera-select">
+						{% for cam in config.cams|sort %}
+						<option value="{{ cam }}">{{ cam}}</option>
+						{% endfor %}
+					</select>
+				</div>
+				<div class="zoombuttons">
+					<button class="btn" onmousedown="zoomIn()" onmouseup="zoomStop()">+</button>
+					<button class="btn" onmousedown="zoomOut()" onmouseup="zoomStop()">-</button>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<script src="{{ static_path }}/lodash.full.min.js"></script>
+
+	<script>
+		const API_CONTEXT_PATH = "{{ config.context_path }}";
+		const DEBOUNCE_WAIT = 250;
+		const DEBOUNCE_MAX_WAIT = 500;
+		const DEBOUNCE_OPTIONS = {
+			leading: false,
+			trailing: true,
+			maxWait: DEBOUNCE_MAX_WAIT
+		}
+
+		let lockToken = null;
+		let ptzMoves = {
+			left: 0,
+			right: 0,
+			up: 0,
+			down: 0,
+			zin: 0,
+			zout: 0,
+			stop: 0
+		}
+
+		const debouncedCallPtzApi = _.debounce(callPtzApi, DEBOUNCE_WAIT, DEBOUNCE_OPTIONS);
+
+		function setPtzMoves(payload) {
+			for (let direction in payload) {
+
+				let offset = payload[direction];
+
+				if (direction === "stop") {
+					if (offset) {
+						ptzMoves.stop = 1;
+						ptzMoves.right = 0;
+						ptzMoves.left = 0;
+						ptzMoves.up = 0;
+						ptzMoves.down = 0;
+						ptzMoves.zin = 0;
+						ptzMoves.zout = 0;
+					} else {
+						ptzMoves.stop = 0;
+					}
+				}
+
+				// Stop is set on mouse click release
+				// Ignore x/x axis moves
+				if (ptzMoves.stop) {
+					debouncedCallPtzApi();
+					return;
+				}
+
+				if (direction === "zin") {
+					ptzMoves.zin = offset;
+				}
+
+				if (direction === "zout") {
+					ptzMoves.zout = offset;
+				}
+
+				if (direction === "x") {
+					offset = offset / 5;
+					if (offset >= 0) {
+						ptzMoves.right = offset.toFixed();
+						ptzMoves.left = 0;
+					} else {
+						ptzMoves.left = Math.abs(offset).toFixed();
+						ptzMoves.right = 0;
+					}
+				}
+				if (direction === "y") {
+					offset = offset / 5;
+					if (offset >= 0) {
+						ptzMoves.down = offset.toFixed();
+						ptzMoves.up = 0;
+					} else {
+						ptzMoves.up = Math.abs(offset).toFixed();
+						ptzMoves.down = 0;
+					}
+				}
+			}
+			debouncedCallPtzApi();
+		}
+
+		function storeLockToken(payload) {
+			let token = payload.lock_token
+			if (token) {
+				lockToken = token;
+			}
+		}
+
+		function callPtzApi() {
+
+			let cameraSelected = document.getElementById("camera-select").value;
+
+			let ptzApiUrl = `${API_CONTEXT_PATH}cams/${cameraSelected}/ptz/move`;
+			let ptzApiQueryParams = `left=${ptzMoves.left}`;
+			ptzApiQueryParams += `&right=${ptzMoves.right}`;
+			ptzApiQueryParams += `&up=${ptzMoves.up}`;
+			ptzApiQueryParams += `&down=${ptzMoves.down}`;
+			ptzApiQueryParams += `&zin=${ptzMoves.zin}`;
+			ptzApiQueryParams += `&zout=${ptzMoves.zout}`;
+			ptzApiQueryParams += `&stop=${ptzMoves.stop}`;
+			ptzApiQueryParams += `&lock_token=${lockToken}`;
+
+			//console.log(`Calling PTZ API at ${ptzApiUrl}`);
+			//console.log(`Calling PTZ API at ${ptzApiQueryParams}`);
+			console.log(`Calling PTZ API on ${cameraSelected} with ${JSON.stringify(ptzMoves)}`);
+			fetch(`${ptzApiUrl}?${ptzApiQueryParams}`)
+				.then(response => response.json())
+				.then(json => storeLockToken(json));
+		}
+	</script>
+
+	<script>
+		function JOYSTICK(parent) {
+			this.dragStart = null;
+			this.currentPos = { x: 0, y: 0 };
+			this.maxDiff = 35;
+			this.stick = document.createElement('div');
+			this.stick.classList.add('joystick-stick');
+			parent.appendChild(this.stick);
+
+			this.stick.addEventListener('mousedown', this.handleMouseDown.bind(this));
+			document.addEventListener('mousemove', this.handleMouseMove.bind(this));
+			document.addEventListener('mouseup', this.handleMouseUp.bind(this));
+			this.stick.addEventListener('touchstart', this.handleMouseDown.bind(this));
+			document.addEventListener('touchmove', this.handleMouseMove.bind(this));
+			document.addEventListener('touchend', this.handleMouseUp.bind(this));
+
+		};
+
+		JOYSTICK.prototype.handleMouseDown = function (event) {
+			this.stick.style.transition = '0s';
+			if (event.changedTouches) {
+				this.dragStart = {
+					x: event.changedTouches[0].clientX,
+					y: event.changedTouches[0].clientY,
+				};
+				return;
+			}
+			this.dragStart = {
+				x: event.clientX,
+				y: event.clientY,
+			};
+			setPtzMoves({ stop: 0 });
+		};
+
+		JOYSTICK.prototype.handleMouseMove = function (event) {
+			if (this.dragStart === null) return;
+			event.preventDefault();
+			if (event.changedTouches) {
+				event.clientX = event.changedTouches[0].clientX;
+				event.clientY = event.changedTouches[0].clientY;
+			}
+			const xDiff = event.clientX - this.dragStart.x;
+			const yDiff = event.clientY - this.dragStart.y;
+			const angle = Math.atan2(yDiff, xDiff);
+			const distance = Math.min(this.maxDiff, Math.hypot(xDiff, yDiff));
+
+			// Get the distance between the cursor and the center
+			const distanceOld = Math.sqrt(Math.pow(xDiff, 2) + Math.pow(yDiff, 2));
+
+			const xNew = distance * Math.cos(angle);
+			const yNew = distance * Math.sin(angle);
+			this.stick.style.transform = `translate3d(${xNew}px, ${yNew}px, 0px)`;
+			this.currentPos = { x: xNew, y: yNew };
+			setPtzMoves(this.currentPos);
+		};
+
+		JOYSTICK.prototype.handleMouseUp = function (event) {
+			if (this.dragStart === null) return;
+			this.stick.style.transition = '.2s';
+			this.stick.style.transform = `translate3d(0px, 0px, 0px)`;
+			this.dragStart = null;
+			this.currentPos = { x: 0, y: 0 };
+			setPtzMoves({ stop: 1 });
+		};
+
+		function zoomIn() {
+			setPtzMoves({ stop: 0, zin: 1 });
+		};
+
+		function zoomOut() {
+			setPtzMoves({ stop: 0, zout: 1 });
+		};
+
+		function zoomStop() {
+			setPtzMoves({ stop: 1 });
+		}
+
+		const joystick = new JOYSTICK(document.getElementById('joystick-base'));
+		//console.log(joystick.currentPos);
+	</script>
+
+</body>
+
+</html>
